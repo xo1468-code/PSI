@@ -109,8 +109,15 @@
   /* 결과 */
   .score-big { font-size: 40px; font-weight: 800; }
   .pass { color: var(--ok); } .fail { color: var(--bad); }
-  .review-item { border-top: 1px solid var(--line); padding: 10px 0; font-size: 14px; display: flex; gap: 10px; align-items: baseline; }
-  .review-item .q { flex: 1; word-break: keep-all; }
+  .review-item { border-top: 1px solid var(--line); padding: 10px 0; font-size: 14px; }
+  .review-item summary { cursor: pointer; word-break: keep-all; }
+  .review-item .q { word-break: keep-all; }
+  .review-body { padding: 8px 0 0 4px; display: grid; gap: 4px; }
+  .explain { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); font-size: 15px; }
+  .explain-head { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .ai-badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--warn); }
+  .explain-body { white-space: pre-line; word-break: keep-all; }
+  .explain-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
   .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
   .kbd { font-size: 12px; color: var(--muted); }
   .hide { display: none !important; }
@@ -153,13 +160,25 @@ const store = (() => {
 
 /* ---------- 데이터 로딩 ---------- */
 let EXAMS = [], ALL = [], BY_ID = {};
+const loadScript = (src, quiet) => new Promise(res => {
+  const s = document.createElement('script');
+  s.src = src; s.onload = res; s.onerror = () => { if (!quiet) console.warn('불러오기 실패:', src); res(); };
+  document.head.appendChild(s);
+});
+// 해설은 회차별 data/<id>.exp.js 에 있으며, 없는 회차는 조용히 건너뛴다
+const explainOf = q => ((window.EXPLAIN || {})[q.examId] || {})[q.n];
+function explainHtml(q) {
+  const exp = explainOf(q);
+  if (!exp) return '';
+  return `<div class="explain"><div class="explain-head">💡 해설 <span class="ai-badge">AI 작성 · 참고용</span></div>
+    <div class="explain-body">${esc(exp)}</div>
+    <div class="explain-note">AI가 작성한 참고용 해설로, 틀린 내용이 있을 수 있습니다. 정확한 내용은 교재나 법령 원문으로 확인하세요.</div></div>`;
+}
 function loadExams() {
   const files = window.EXAM_FILES || [];
-  return Promise.all(files.map(f => new Promise(res => {
-    const s = document.createElement('script');
-    s.src = 'data/' + f; s.onload = res; s.onerror = () => { console.warn('불러오기 실패:', f); res(); };
-    document.head.appendChild(s);
-  }))).then(() => {
+  return Promise.all(files.map(f => loadScript('data/' + f)))
+    .then(() => Promise.all((window.EXAMS || []).map(ex => loadScript(`data/${ex.id}.exp.js`, true))))
+    .then(() => {
     EXAMS = (window.EXAMS || []).slice().sort((a, b) => b.id.localeCompare(a.id));
     ALL = []; BY_ID = {};
     for (const ex of EXAMS) for (const q of ex.questions) {
@@ -430,6 +449,7 @@ function renderQuestion() {
       ${(q.img || []).map(src => `<img class="qimg" src="${esc(src)}" alt="문제 ${q.n} 글상자">`).join('')}
       <div class="choices">${choiceHtml}</div>
       ${feedback}
+      ${checked ? explainHtml(q) : ''}
       ${!exam ? `<details class="memo" ${store.data.memos[q.id] ? 'open' : ''}><summary>📝 내 메모${store.data.memos[q.id] ? ' (작성됨)' : ''}</summary>
         <textarea id="memo" placeholder="풀이 요령, 헷갈린 개념 등을 적어 두세요. 자동 저장됩니다.">${esc(store.data.memos[q.id] || '')}</textarea></details>` : ''}
       <div class="nav">
@@ -504,8 +524,13 @@ function finishExam() {
 function reviewList(sess, ids) {
   return ids.map(id => {
     const q = BY_ID[id]; const p = sess.picks[id];
-    return `<div class="review-item"><span class="tag">${esc(q.examTitle)} ${q.n}번</span><span class="q">${esc(q.q)}</span>
-      <span class="small" style="white-space:nowrap">내 답 <b class="fail">${p ? MARKS[p - 1] : '—'}</b> · 정답 <b class="pass">${q.answers.map(a => MARKS[a - 1]).join(',')}</b></span></div>`;
+    const choices = q.c.map((c, i) => {
+      const cls = q.answers.includes(i + 1) ? 'pass' : (p === i + 1 ? 'fail' : '');
+      return `<div class="${cls}">${MARKS[i]} ${c === MARKS[i] ? '' : esc(c)}</div>`;
+    }).join('');
+    return `<details class="review-item"><summary><span class="tag">${esc(q.examTitle)} ${q.n}번</span> <span class="q">${esc(q.q)}</span>
+      <span class="small" style="white-space:nowrap">내 답 <b class="fail">${p ? MARKS[p - 1] : '—'}</b> · 정답 <b class="pass">${q.answers.map(a => MARKS[a - 1]).join(',')}</b></span></summary>
+      <div class="review-body">${(q.img || []).map(src => `<img class="qimg" src="${esc(src)}" alt="">`).join('')}${choices}${explainHtml(q)}</div></details>`;
   }).join('');
 }
 
