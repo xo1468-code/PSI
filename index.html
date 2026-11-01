@@ -342,7 +342,7 @@ function renderHome() {
     </div>
     <div class="card"><h2>회차별 문제</h2><table><thead><tr><th>회차</th><th>진행</th><th></th><th>최고점</th><th></th></tr></thead><tbody>${examRows || '<tr><td colspan="5" class="empty">문제 데이터가 없습니다.</td></tr>'}</tbody></table></div>
     <div class="card"><h2>과목별 정답률</h2>${subjRows}</div>
-    ${hist ? `<div class="card"><h2>최근 모의고사 기록</h2><table><thead><tr><th>일시</th><th>시험</th><th>평균</th><th>결과</th><th>과목별</th></tr></thead><tbody>${hist}</tbody></table></div>` : ''}
+    ${hist ? `<div class="card"><h2>최근 채점 기록</h2><table><thead><tr><th>일시</th><th>시험</th><th>평균</th><th>결과</th><th>과목별</th></tr></thead><tbody>${hist}</tbody></table></div>` : ''}
     <div class="card small muted">
       <button class="btn plain small" id="backup">기록 백업</button>
       <button class="btn plain small" id="restore">기록 복원</button>
@@ -600,13 +600,25 @@ function finishExam() {
     if (p) { if (record(q, p)) r.correct++; }
     else { const st = store.data.stats[id] ||= { tries: 0, correct: 0, wrong: 0 }; st.tries++; st.wrong++; st.last = false; st.at = Date.now(); }
   }
-  const subjScores = [1, 2, 3, 4].filter(s => per[s]).map(s => ({ s, score: Math.round(per[s].correct / per[s].total * 100), ...per[s] }));
-  const avg = Math.round(subjScores.reduce((a, x) => a + x.score, 0) / subjScores.length);
-  const pass = avg >= 60 && subjScores.every(x => x.score >= 40);
+  const { subjScores, avg, pass } = judge(per);
   store.data.history.push({ at: Date.now(), title: S.title, examId: S.examId || null, avg, pass, subj: subjScores.map(x => x.score), dur });
   const done = S; delete store.data.session; store.save(); S = null;
   renderExamResult(done, subjScores, avg, pass, dur);
 }
+
+// 유통관리사 합격 기준: 과목별 40점 이상(과락 없음) + 평균 60점 이상
+function judge(per) {
+  const subjScores = [1, 2, 3, 4].filter(s => per[s]).map(s => ({ s, score: Math.round(per[s].correct / per[s].total * 100), ...per[s] }));
+  const avg = Math.round(subjScores.reduce((a, x) => a + x.score, 0) / subjScores.length);
+  const pass = avg >= 60 && subjScores.every(x => x.score >= 40);
+  return { subjScores, avg, pass };
+}
+const subjScoreRows = subjScores => subjScores.map(x => `<div class="subj-row"><span>${SUBJECTS[x.s]}</span><div class="bar"><i style="width:${x.score}%;background:${x.score < 40 ? 'var(--bad)' : 'var(--accent)'}"></i></div>
+  <span><b class="${x.score < 40 ? 'fail' : ''}">${x.score}점</b> <span class="small muted">${x.correct}/${x.total}${x.score < 40 ? ' · 과락' : ''}</span></span></div>`).join('');
+const failReason = (subjScores, avg) => [
+  ...subjScores.filter(x => x.score < 40).map(x => `${SUBJECTS[x.s]} 과락(${x.score}점)`),
+  ...(avg < 60 ? [`평균 ${avg}점으로 60점 미만`] : []),
+].join(' · ');
 
 function reviewList(sess, ids) {
   return ids.map(id => {
@@ -627,12 +639,10 @@ function renderExamResult(sess, subjScores, avg, pass, dur) {
     <div class="card" style="text-align:center">
       <div class="muted">${esc(sess.title)} 결과 · 소요 ${fmtTime(dur)}</div>
       <div class="score-big ${pass ? 'pass' : 'fail'}">${avg}점 · ${pass ? '합격' : '불합격'}</div>
+      ${pass ? '' : `<div class="small fail">${failReason(subjScores, avg)}</div>`}
       <div class="small muted">합격 기준: 과목별 40점 이상 · 평균 60점 이상</div>
     </div>
-    <div class="card"><h2>과목별 점수</h2>
-      ${subjScores.map(x => `<div class="subj-row"><span>${SUBJECTS[x.s]}</span><div class="bar"><i style="width:${x.score}%;background:${x.score < 40 ? 'var(--bad)' : 'var(--accent)'}"></i></div>
-        <span><b class="${x.score < 40 ? 'fail' : ''}">${x.score}점</b> <span class="small muted">${x.correct}/${x.total}</span></span></div>`).join('')}
-    </div>
+    <div class="card"><h2>과목별 점수</h2>${subjScoreRows(subjScores)}</div>
     <div class="card"><h2>틀린 문제 ${wrongIds.length}개</h2>
       ${wrongIds.length ? reviewList(sess, wrongIds) : '<div class="empty">모두 맞혔습니다! 🎉</div>'}
       <div class="nav"><button class="btn plain" id="home">처음으로</button><span class="sp"></span>
@@ -647,13 +657,26 @@ function renderStudyResult() {
   const doneIds = sess.qids.filter(id => sess.checked[id]);
   const wrongIds = doneIds.filter(id => !BY_ID[id].answers.includes(sess.picks[id]));
   const c = doneIds.length - wrongIds.length;
+  // 푼 문제 기준으로 과목별 점수를 매겨 실제 시험과 같은 기준으로 판정
+  const per = {};
+  for (const id of doneIds) {
+    const r = per[BY_ID[id].s] ||= { total: 0, correct: 0 };
+    r.total++; if (BY_ID[id].answers.includes(sess.picks[id])) r.correct++;
+  }
+  const { subjScores, avg, pass } = doneIds.length ? judge(per) : { subjScores: [] };
+  const full = subjScores.length === 4;   // 4과목을 모두 풀었을 때만 합격 판정·기록
+  if (full) store.data.history.push({ at: Date.now(), title: sess.title, examId: null, avg, pass, subj: subjScores.map(x => x.score) });
   delete store.data.session; store.save(); S = null;
   $('#app').innerHTML = `
     <div class="card" style="text-align:center">
       <div class="muted">${esc(sess.title)} 결과</div>
-      <div class="score-big">${c} / ${doneIds.length} <span class="small muted">정답률 ${pct(c, doneIds.length)}%</span></div>
-      ${doneIds.length < sess.qids.length ? `<div class="small muted">${sess.qids.length - doneIds.length}문제는 풀지 않았습니다.</div>` : ''}
+      ${full ? `<div class="score-big ${pass ? 'pass' : 'fail'}">${avg}점 · ${pass ? '합격' : '불합격'}</div>
+        ${pass ? '' : `<div class="small fail">${failReason(subjScores, avg)}</div>`}` : ''}
+      <div class="${full ? 'small muted' : 'score-big'}">${c} / ${doneIds.length} 정답 <span class="small muted">정답률 ${pct(c, doneIds.length)}%</span></div>
+      ${doneIds.length < sess.qids.length ? `<div class="small muted">${sess.qids.length - doneIds.length}문제는 풀지 않았습니다. 점수는 푼 문제 기준입니다.</div>` : ''}
+      ${full ? '<div class="small muted">합격 기준: 과목별 40점 이상 · 평균 60점 이상</div>' : ''}
     </div>
+    ${subjScores.length ? `<div class="card"><h2>과목별 점수</h2>${subjScoreRows(subjScores)}</div>` : ''}
     <div class="card"><h2>틀린 문제 ${wrongIds.length}개</h2>
       ${wrongIds.length ? reviewList(sess, wrongIds) : '<div class="empty">틀린 문제가 없습니다.</div>'}
       <div class="nav"><button class="btn plain" id="home">처음으로</button><span class="sp"></span>
