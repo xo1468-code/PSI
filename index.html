@@ -129,11 +129,14 @@
   .checklist summary { cursor: pointer; font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
   .checklist summary .cnt { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--accent); }
   .checklist ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
-  .checklist label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; word-break: keep-all; }
-  .checklist input { width: 18px; height: 18px; margin: 3px 0 0; flex: none; accent-color: var(--ok); }
+  .checklist li { display: flex; gap: 6px; align-items: stretch; }
+  .checklist label { flex: 1; display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; word-break: keep-all; }
+  .ck-del { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 0 10px; color: var(--muted); }
+  .ck-add { display: flex; gap: 6px; margin-top: 10px; }
+  .ck-add input { flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  .checklist input[type=checkbox] { width: 18px; height: 18px; margin: 3px 0 0; flex: none; accent-color: var(--ok); }
   .checklist label.done { background: var(--ok-soft); border-color: var(--ok); }
   .checklist label.done span { color: var(--muted); text-decoration: line-through; }
-  .checklist .note { margin-top: 10px; font-size: 12px; color: var(--muted); }
   .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
   .kbd { font-size: 12px; color: var(--muted); }
   .hide { display: none !important; }
@@ -254,38 +257,37 @@ function ddayHtml() {
 }
 
 /* ---------- 준비물 체크리스트 ---------- */
-const CHECKLIST = [
-  '수험표 (출력하거나 수험번호·고사장 확인)',
-  '신분증 (주민등록증·운전면허증·여권 등 유효한 것)',
-  '필기구 (컴퓨터용 사인펜·검정 볼펜)',
-  '수정테이프',
-  '아날로그 손목시계 (스마트워치는 사용 불가)',
-  '고사장 위치·교통편·입실 시간 확인',
-  '물, 가벼운 간식',
-  '전날 오답노트 마지막 점검 & 일찍 자기',
-];
+// 처음 한 번만 넣는 기본 항목. 이후엔 사용자가 추가·삭제한 목록을 저장소에 둔다
+const CHECKLIST_DEFAULT = ['수험표', '신분증', '필기구', '손목시계'];
 const daysLeft = () => {
   const [y, m, d] = EXAM_DATE.split('-').map(Number);
   const now = new Date();
   return Math.round((new Date(y, m - 1, d) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
 };
+const ckItems = () => store.data.checkItems ||= CHECKLIST_DEFAULT.map(t => ({ t, done: false }));
+const ckCount = () => `${ckItems().filter(x => x.done).length}/${ckItems().length}`;
+function checklistItemsHtml() {
+  return ckItems().map((x, i) => `<li><label class="${x.done ? 'done' : ''}"><input type="checkbox" data-ck="${i}"${x.done ? ' checked' : ''}><span>${esc(x.t)}</span></label>
+    <button class="ck-del" data-ck-del="${i}" title="삭제">✕</button></li>`).join('') || '<li class="muted small">항목이 없습니다. 아래에서 추가하세요.</li>';
+}
 function checklistHtml() {
-  const left = daysLeft();
-  if (left < 0) return '';
-  const done = store.data.checklist || {};
-  const cnt = CHECKLIST.filter((_, i) => done[i]).length;
-  return `<details class="card checklist"${left <= 3 ? ' open' : ''}><summary>🎒 시험 준비물 체크리스트 <span class="cnt" id="ck-cnt">${cnt}/${CHECKLIST.length}</span></summary>
-    <ul>${CHECKLIST.map((t, i) => `<li><label class="${done[i] ? 'done' : ''}"><input type="checkbox" data-ck="${i}"${done[i] ? ' checked' : ''}><span>${esc(t)}</span></label></li>`).join('')}</ul>
-    <div class="note">정확한 준비물과 입실 시간은 수험표와 대한상공회의소 안내를 꼭 확인하세요.</div></details>`;
+  return `<details class="card checklist" id="checklist"><summary>🎒 준비물 체크리스트 <span class="cnt" id="ck-cnt">${ckCount()}</span></summary>
+    <ul id="ck-list">${checklistItemsHtml()}</ul>
+    <form class="ck-add" id="ck-add"><input id="ck-input" maxlength="60" placeholder="항목 추가 (예: 컴퓨터용 사인펜)"><button class="btn small">추가</button></form></details>`;
 }
 function bindChecklist() {
-  document.querySelectorAll('[data-ck]').forEach(cb => cb.onchange = () => {
-    const done = store.data.checklist ||= {};
-    if (cb.checked) done[cb.dataset.ck] = true; else delete done[cb.dataset.ck];
-    store.save();
-    cb.parentElement.classList.toggle('done', cb.checked);
-    $('#ck-cnt').textContent = `${Object.keys(done).length}/${CHECKLIST.length}`;
-  });
+  const refresh = () => { store.save(); $('#ck-list').innerHTML = checklistItemsHtml(); $('#ck-cnt').textContent = ckCount(); bindItems(); };
+  const bindItems = () => {
+    document.querySelectorAll('[data-ck]').forEach(cb => cb.onchange = () => { ckItems()[cb.dataset.ck].done = cb.checked; refresh(); });
+    document.querySelectorAll('[data-ck-del]').forEach(b => b.onclick = () => { ckItems().splice(b.dataset.ckDel, 1); refresh(); });
+  };
+  bindItems();
+  $('#ck-add').onsubmit = e => {
+    e.preventDefault();
+    const t = $('#ck-input').value.trim();
+    if (!t) return;
+    ckItems().push({ t, done: false }); $('#ck-input').value = ''; refresh();
+  };
 }
 
 /* ---------- 화면: 홈 ---------- */
@@ -323,7 +325,6 @@ function renderHome() {
 
   $('#app').innerHTML = `
     ${ddayHtml()}
-    ${checklistHtml()}
     ${sess ? `<div class="card resume"><div><b>이어서 풀기</b><div class="small muted">${esc(sess.title)} · ${Object.keys(sess.picks).length}/${sess.qids.length} 문제 풀이</div></div>
       <button class="btn plain" id="drop-sess">버리기</button><button class="btn" id="resume">계속</button></div>` : ''}
     <div class="stats" style="margin-bottom:16px">
@@ -347,7 +348,8 @@ function renderHome() {
       &nbsp;<button class="btn plain small" id="backup">기록 백업</button>
       <button class="btn plain small" id="restore">기록 복원</button>
       <button class="btn plain small" id="reset">기록 초기화</button>
-    </div>`;
+    </div>
+    ${checklistHtml()}`;
 
   document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
     const m = b.dataset.mode;
