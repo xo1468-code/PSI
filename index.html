@@ -125,6 +125,15 @@
   .dday-body b { display: block; font-size: 17px; }
   .dday-body .sub { font-size: 13px; opacity: .85; }
   .dday-body .cheer { margin-top: 6px; font-size: 14px; }
+  /* 준비물 체크리스트 */
+  .checklist summary { cursor: pointer; font-weight: 700; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+  .checklist summary .cnt { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--accent); }
+  .checklist ul { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+  .checklist label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; word-break: keep-all; }
+  .checklist input { width: 18px; height: 18px; margin: 3px 0 0; flex: none; accent-color: var(--ok); }
+  .checklist label.done { background: var(--ok-soft); border-color: var(--ok); }
+  .checklist label.done span { color: var(--muted); text-decoration: line-through; }
+  .checklist .note { margin-top: 10px; font-size: 12px; color: var(--muted); }
   .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
   .kbd { font-size: 12px; color: var(--muted); }
   .hide { display: none !important; }
@@ -229,7 +238,7 @@ function ddayHtml() {
   const [y, m, d] = EXAM_DATE.split('-').map(Number);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const left = Math.round((new Date(y, m - 1, d) - today) / 86400000);
+  const left = daysLeft();
   if (left < 0) return '';   // 시험이 지나면 숨김
   const dow = '일월화수목금토'[new Date(y, m - 1, d).getDay()];
   const todayCnt = Object.values(store.data.stats).filter(st => st.at >= today.getTime()).length;
@@ -242,6 +251,41 @@ function ddayHtml() {
   return `<div class="card dday"><div class="dday-num">${left === 0 ? 'D-DAY' : 'D-' + left}</div>
     <div class="dday-body"><b>${title}</b><div class="sub">시험일 ${m}월 ${d}일 (${dow}) · 오늘 푼 문제 ${todayCnt}개</div>
     <div class="cheer">${msg}</div></div></div>`;
+}
+
+/* ---------- 준비물 체크리스트 ---------- */
+const CHECKLIST = [
+  '수험표 (출력하거나 수험번호·고사장 확인)',
+  '신분증 (주민등록증·운전면허증·여권 등 유효한 것)',
+  '필기구 (컴퓨터용 사인펜·검정 볼펜)',
+  '수정테이프',
+  '아날로그 손목시계 (스마트워치는 사용 불가)',
+  '고사장 위치·교통편·입실 시간 확인',
+  '물, 가벼운 간식',
+  '전날 오답노트 마지막 점검 & 일찍 자기',
+];
+const daysLeft = () => {
+  const [y, m, d] = EXAM_DATE.split('-').map(Number);
+  const now = new Date();
+  return Math.round((new Date(y, m - 1, d) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+};
+function checklistHtml() {
+  const left = daysLeft();
+  if (left < 0) return '';
+  const done = store.data.checklist || {};
+  const cnt = CHECKLIST.filter((_, i) => done[i]).length;
+  return `<details class="card checklist"${left <= 3 ? ' open' : ''}><summary>🎒 시험 준비물 체크리스트 <span class="cnt" id="ck-cnt">${cnt}/${CHECKLIST.length}</span></summary>
+    <ul>${CHECKLIST.map((t, i) => `<li><label class="${done[i] ? 'done' : ''}"><input type="checkbox" data-ck="${i}"${done[i] ? ' checked' : ''}><span>${esc(t)}</span></label></li>`).join('')}</ul>
+    <div class="note">정확한 준비물과 입실 시간은 수험표와 대한상공회의소 안내를 꼭 확인하세요.</div></details>`;
+}
+function bindChecklist() {
+  document.querySelectorAll('[data-ck]').forEach(cb => cb.onchange = () => {
+    const done = store.data.checklist ||= {};
+    if (cb.checked) done[cb.dataset.ck] = true; else delete done[cb.dataset.ck];
+    store.save();
+    cb.parentElement.classList.toggle('done', cb.checked);
+    $('#ck-cnt').textContent = `${Object.keys(done).length}/${CHECKLIST.length}`;
+  });
 }
 
 /* ---------- 화면: 홈 ---------- */
@@ -279,6 +323,7 @@ function renderHome() {
 
   $('#app').innerHTML = `
     ${ddayHtml()}
+    ${checklistHtml()}
     ${sess ? `<div class="card resume"><div><b>이어서 풀기</b><div class="small muted">${esc(sess.title)} · ${Object.keys(sess.picks).length}/${sess.qids.length} 문제 풀이</div></div>
       <button class="btn plain" id="drop-sess">버리기</button><button class="btn" id="resume">계속</button></div>` : ''}
     <div class="stats" style="margin-bottom:16px">
@@ -318,6 +363,7 @@ function renderHome() {
   $('#reset').onclick = () => { if (confirm('풀이 기록, 오답노트, 즐겨찾기, 메모를 모두 지울까요?')) { localStorage.removeItem(STORE_KEY); location.reload(); } };
   $('#backup').onclick = backup;
   $('#restore').onclick = restore;
+  bindChecklist();
 }
 const BY_EXAM = id => EXAMS.find(e => e.id === id);
 
