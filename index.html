@@ -118,6 +118,13 @@
   .ai-badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--warn); }
   .explain-body { white-space: pre-line; word-break: keep-all; }
   .explain-note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  /* D-DAY */
+  .dday { display: flex; align-items: center; gap: 18px; background: linear-gradient(135deg, var(--accent), #7b5be6); color: #fff; border: none; }
+  .dday-num { font-size: 40px; font-weight: 800; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .dday-body { flex: 1; min-width: 0; word-break: keep-all; }
+  .dday-body b { display: block; font-size: 17px; }
+  .dday-body .sub { font-size: 13px; opacity: .85; }
+  .dday-body .cheer { margin-top: 6px; font-size: 14px; }
   .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
   .kbd { font-size: 12px; color: var(--muted); }
   .hide { display: none !important; }
@@ -127,6 +134,8 @@
     .subj-row { grid-template-columns: 80px 1fr 70px; }
     .qtext { font-size: 16px; }
     .kbd { display: none; }
+    .dday { gap: 14px; }
+    .dday-num { font-size: 32px; }
   }
 </style>
 </head>
@@ -146,6 +155,16 @@ const SUBJECTS = { 1: '유통물류일반', 2: '상권분석', 3: '유통마케�
 const MARKS = ['①', '②', '③', '④', '⑤'];
 const EXAM_MINUTES = 100;
 const STORE_KEY = 'ycg2-study-v1';
+const EXAM_DATE = '2026-11-14';   // 다음 시험일 (바뀌면 여기만 고치면 됨)
+const CHEERS = [
+  '지금까지 푼 문제가 시험장에서 힘이 됩니다.',
+  '하루 한 회차씩, 꾸준함이 합격을 만듭니다.',
+  '틀린 문제는 오답노트에서 한 번 더! 같은 실수는 두 번 없다.',
+  '과목마다 40점, 평균 60점이면 합격. 충분히 할 수 있어요.',
+  '어제보다 한 문제 더 맞히면 그걸로 성공입니다.',
+  '헷갈리는 개념은 해설로 정리하고 넘어가요.',
+  '끝까지 포기하지 않는 사람이 합격합니다.',
+];
 
 /* ---------- 저장소 ---------- */
 const store = (() => {
@@ -205,6 +224,26 @@ function record(q, choice) {
 }
 const isWrongNote = id => store.data.stats[id] && store.data.stats[id].last === false;
 
+/* ---------- D-DAY ---------- */
+function ddayHtml() {
+  const [y, m, d] = EXAM_DATE.split('-').map(Number);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const left = Math.round((new Date(y, m - 1, d) - today) / 86400000);
+  if (left < 0) return '';   // 시험이 지나면 숨김
+  const dow = '일월화수목금토'[new Date(y, m - 1, d).getDay()];
+  const todayCnt = Object.values(store.data.stats).filter(st => st.at >= today.getTime()).length;
+  const cheer = CHEERS[(today.getTime() / 86400000 | 0) % CHEERS.length];
+  const [title, msg] = left === 0
+    ? ['오늘이 시험날! 🍀', '긴장하지 말고 아는 문제부터 차근차근. 꼭 합격하세요, 화이팅! 💪']
+    : left === 1
+      ? ['내일이 시험이에요!', '오늘은 오답노트만 가볍게 보고 푹 자기. 꼭 합격하세요, 화이팅! 💪']
+      : ['유통관리사 2급 꼭 합격하자! 💪', `${cheer} 화이팅! 🔥`];
+  return `<div class="card dday"><div class="dday-num">${left === 0 ? 'D-DAY' : 'D-' + left}</div>
+    <div class="dday-body"><b>${title}</b><div class="sub">시험일 ${m}월 ${d}일 (${dow}) · 오늘 푼 문제 ${todayCnt}개</div>
+    <div class="cheer">${msg}</div></div></div>`;
+}
+
 /* ---------- 화면: 홈 ---------- */
 function renderHome() {
   stopTimer();
@@ -239,6 +278,7 @@ function renderHome() {
     <td>${h.avg}점</td><td class="${h.pass ? 'pass' : 'fail'}">${h.pass ? '합격' : '불합격'}</td><td class="muted">${h.subj.join(' / ')}</td></tr>`).join('');
 
   $('#app').innerHTML = `
+    ${ddayHtml()}
     ${sess ? `<div class="card resume"><div><b>이어서 풀기</b><div class="small muted">${esc(sess.title)} · ${Object.keys(sess.picks).length}/${sess.qids.length} 문제 풀이</div></div>
       <button class="btn plain" id="drop-sess">버리기</button><button class="btn" id="resume">계속</button></div>` : ''}
     <div class="stats" style="margin-bottom:16px">
