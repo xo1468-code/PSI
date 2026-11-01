@@ -258,7 +258,7 @@ function ddayHtml() {
 
 /* ---------- 준비물 체크리스트 ---------- */
 // 처음 한 번만 넣는 기본 항목. 이후엔 사용자가 추가·삭제한 목록을 저장소에 둔다
-const CHECKLIST_DEFAULT = ['수험표', '신분증', '필기구', '손목시계'];
+const CHECKLIST_DEFAULT = ['수험표', '신분증', '손목시계'];
 const daysLeft = () => {
   const [y, m, d] = EXAM_DATE.split('-').map(Number);
   const now = new Date();
@@ -344,8 +344,7 @@ function renderHome() {
     <div class="card"><h2>과목별 정답률</h2>${subjRows}</div>
     ${hist ? `<div class="card"><h2>최근 모의고사 기록</h2><table><thead><tr><th>일시</th><th>시험</th><th>평균</th><th>결과</th><th>과목별</th></tr></thead><tbody>${hist}</tbody></table></div>` : ''}
     <div class="card small muted">
-      기출문제 추가: <b>기출문제추가.bat</b> 실행 → 교사용 PDF를 끌어다 놓기 → 이 화면 새로고침.
-      &nbsp;<button class="btn plain small" id="backup">기록 백업</button>
+      <button class="btn plain small" id="backup">기록 백업</button>
       <button class="btn plain small" id="restore">기록 복원</button>
       <button class="btn plain small" id="reset">기록 초기화</button>
     </div>
